@@ -1,0 +1,36 @@
+{
+  "name": "BankFlow - .NET 10",
+  "image": "mcr.microsoft.com/devcontainers/dotnet:2-10.0",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
+  },
+  "forwardPorts": [8080, 5672, 15672, 1433],
+  "portsAttributes": {
+    "8080": {
+      "label": "BankFlow API",
+      "onAutoForward": "notify"
+    },
+    "5672": {
+      "label": "RabbitMQ AMQP",
+      "onAutoForward": "silent"
+    },
+    "15672": {
+      "label": "RabbitMQ Management",
+      "onAutoForward": "notify"
+    },
+    "1433": {
+      "label": "SQL Server",
+      "onAutoForward": "silent"
+    }
+  },
+  "postCreateCommand": "dotnet restore BankFlow.slnx",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-dotnettools.csdevkit",
+        "ms-azuretools.vscode-docker"
+      ]
+    }
+  },
+  "remoteUser": "vscode"
+}

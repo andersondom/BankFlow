@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/BankFlow.Api/BankFlow.Api.csproj" />
+    <Project Path="src/BankFlow.Contracts/BankFlow.Contracts.csproj" />
+    <Project Path="src/BankFlow.Worker/BankFlow.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/BankFlow.Api.Tests/BankFlow.Api.Tests.csproj" />
+    <Project Path="tests/BankFlow.Worker.Tests/BankFlow.Worker.Tests.csproj" />
+  </Folder>
+</Solution>
