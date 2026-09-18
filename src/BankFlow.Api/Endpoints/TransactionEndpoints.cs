@@ -1,6 +1,9 @@
+using System.Text.Json;
+using BankFlow.Api.Data;
+using BankFlow.Api.Entities;
 using BankFlow.Api.Models;
 using BankFlow.Contracts.Events;
-using MassTransit;
+using Microsoft.EntityFrameworkCore;
 
 namespace BankFlow.Api.Endpoints;
 
@@ -14,16 +17,24 @@ public static class TransactionEndpoints
 
         group.MapPost("/", CreateTransaction)
             .WithName("CreateTransaction")
-            .WithSummary("Cria uma transação e publica o evento TransactionCreated")
-            .Produces<CreateTransactionResponse>(StatusCodes.Status202Accepted)
+            .WithSummary(
+                "Persiste uma transação e registra seu evento na Transactional Outbox")
+            .Produces<CreateTransactionResponse>(
+                StatusCodes.Status202Accepted)
             .ProducesValidationProblem();
+
+        group.MapGet("/{id:guid}", GetTransaction)
+            .WithName("GetTransaction")
+            .WithSummary("Consulta uma transação pelo identificador")
+            .Produces<TransactionEntity>()
+            .Produces(StatusCodes.Status404NotFound);
 
         return endpoints;
     }
 
     private static async Task<IResult> CreateTransaction(
         CreateTransactionRequest request,
-        IPublishEndpoint publishEndpoint,
+        BankFlowDbContext dbContext,
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
@@ -35,33 +46,73 @@ public static class TransactionEndpoints
         }
 
         var transactionId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
 
         var correlationId = TryGetCorrelationId(
-            httpContext.Request.Headers["X-Correlation-Id"].FirstOrDefault());
+            httpContext.Request.Headers[
+                "X-Correlation-Id"].FirstOrDefault());
+
+        var transaction = new TransactionEntity
+        {
+            Id = transactionId,
+            Amount = request.Amount,
+            Type = request.Type,
+            CreatedAt = now,
+            CorrelationId = correlationId,
+            Status = "Pending"
+        };
 
         var transactionCreated = new TransactionCreated(
-            transactionId,
-            request.Amount,
-            request.Type,
-            DateTimeOffset.UtcNow,
-            correlationId);
+            transaction.Id,
+            transaction.Amount,
+            transaction.Type,
+            transaction.CreatedAt,
+            transaction.CorrelationId);
 
-        await publishEndpoint.Publish(
-            transactionCreated,
-            context =>
-            {
-                context.CorrelationId = correlationId;
-            },
-            cancellationToken);
+        var outboxMessage = new OutboxMessage
+        {
+            Id = Guid.NewGuid(),
+            OccurredAt = now,
+            Type = typeof(TransactionCreated).FullName!,
+            Payload = JsonSerializer.Serialize(transactionCreated),
+            CorrelationId = correlationId
+        };
+
+        await using var databaseTransaction =
+            await dbContext.Database.BeginTransactionAsync(
+                cancellationToken);
+
+        dbContext.Transactions.Add(transaction);
+        dbContext.OutboxMessages.Add(outboxMessage);
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        await databaseTransaction.CommitAsync(cancellationToken);
 
         var response = new CreateTransactionResponse(
             transactionId,
             correlationId,
-            "Published");
+            "Accepted");
 
         return Results.Accepted(
             $"/transactions/{transactionId}",
             response);
+    }
+
+    private static async Task<IResult> GetTransaction(
+        Guid id,
+        BankFlowDbContext dbContext,
+        CancellationToken cancellationToken)
+    {
+        var transaction = await dbContext.Transactions
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                transaction => transaction.Id == id,
+                cancellationToken);
+
+        return transaction is null
+            ? Results.NotFound()
+            : Results.Ok(transaction);
     }
 
     private static Dictionary<string, string[]> Validate(

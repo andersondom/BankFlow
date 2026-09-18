@@ -1,11 +1,27 @@
 using BankFlow.Api.Configuration;
+using BankFlow.Api.Data;
 using BankFlow.Api.Endpoints;
+using BankFlow.Api.Services;
 using MassTransit;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
-builder.Services.AddHealthChecks();
+
+var connectionString =
+    builder.Configuration.GetConnectionString("BankFlow")
+    ?? throw new InvalidOperationException(
+        "A connection string 'BankFlow' não foi configurada.");
+
+builder.Services.AddDbContext<BankFlowDbContext>(options =>
+{
+    options.UseSqlServer(connectionString);
+});
+
+builder.Services
+    .AddHealthChecks()
+    .AddDbContextCheck<BankFlowDbContext>();
 
 var rabbitMqOptions = builder.Configuration
     .GetSection(RabbitMqOptions.SectionName)
@@ -26,6 +42,8 @@ builder.Services.AddMassTransit(configuration =>
             });
     });
 });
+
+builder.Services.AddHostedService<OutboxPublisherService>();
 
 var app = builder.Build();
 
