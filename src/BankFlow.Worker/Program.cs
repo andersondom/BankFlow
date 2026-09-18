@@ -1,8 +1,23 @@
 using BankFlow.Worker.Configuration;
 using BankFlow.Worker.Consumers;
+using BankFlow.Worker.Data;
+using BankFlow.Worker.Services;
 using MassTransit;
+using Microsoft.EntityFrameworkCore;
 
 var builder = Host.CreateApplicationBuilder(args);
+
+var connectionString =
+    builder.Configuration.GetConnectionString("BankFlowWorker")
+    ?? throw new InvalidOperationException(
+        "A connection string 'BankFlowWorker' não foi configurada.");
+
+builder.Services.AddDbContext<WorkerDbContext>(options =>
+{
+    options.UseSqlServer(connectionString);
+});
+
+builder.Services.AddScoped<TransactionEventProcessor>();
 
 var rabbitMqOptions = builder.Configuration
     .GetSection(RabbitMqOptions.SectionName)

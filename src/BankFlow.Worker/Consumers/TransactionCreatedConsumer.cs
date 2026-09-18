@@ -1,26 +1,30 @@
 using BankFlow.Contracts.Events;
+using BankFlow.Worker.Services;
 using MassTransit;
 
 namespace BankFlow.Worker.Consumers;
 
 public sealed class TransactionCreatedConsumer(
+    TransactionEventProcessor processor,
     ILogger<TransactionCreatedConsumer> logger)
     : IConsumer<TransactionCreated>
 {
-    public Task Consume(ConsumeContext<TransactionCreated> context)
+    public async Task Consume(
+        ConsumeContext<TransactionCreated> context)
     {
-        var transaction = context.Message;
+        if (!context.MessageId.HasValue)
+        {
+            logger.LogWarning(
+                "TransactionCreated recebido sem MessageId. TransactionId: {TransactionId}",
+                context.Message.TransactionId);
 
-        logger.LogInformation(
-            "TransactionCreated recebido. TransactionId: {TransactionId}, " +
-            "Amount: {Amount}, Type: {Type}, CorrelationId: {CorrelationId}, " +
-            "CreatedAt: {CreatedAt}",
-            transaction.TransactionId,
-            transaction.Amount,
-            transaction.Type,
-            transaction.CorrelationId,
-            transaction.CreatedAt);
+            throw new InvalidOperationException(
+                "A mensagem recebida não possui MessageId.");
+        }
 
-        return Task.CompletedTask;
+        await processor.ProcessAsync(
+            context.MessageId.Value,
+            context.Message,
+            context.CancellationToken);
     }
 }
