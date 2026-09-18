@@ -1,39 +1,51 @@
+using BankFlow.Api.Configuration;
+using BankFlow.Api.Endpoints;
+using MassTransit;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
+builder.Services.AddHealthChecks();
+
+var rabbitMqOptions = builder.Configuration
+    .GetSection(RabbitMqOptions.SectionName)
+    .Get<RabbitMqOptions>()
+    ?? new RabbitMqOptions();
+
+builder.Services.AddMassTransit(configuration =>
+{
+    configuration.UsingRabbitMq((context, rabbitMq) =>
+    {
+        rabbitMq.Host(
+            rabbitMqOptions.Host,
+            rabbitMqOptions.VirtualHost,
+            host =>
+            {
+                host.Username(rabbitMqOptions.Username);
+                host.Password(rabbitMqOptions.Password);
+            });
+    });
+});
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
 
-var summaries = new[]
+app.MapGet("/", () => Results.Ok(new
 {
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
+    service = "BankFlow.Api",
+    status = "Running",
+    utc = DateTimeOffset.UtcNow
+}))
+.WithName("ServiceInfo");
 
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
+app.MapHealthChecks("/health");
+
+app.MapTransactionEndpoints();
 
 app.Run();
 
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
+public partial class Program;

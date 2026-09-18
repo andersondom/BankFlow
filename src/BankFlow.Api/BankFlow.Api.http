@@ -1,6 +1,44 @@
-@BankFlow.Api_HostAddress = http://localhost:5064
+@BankFlowApi = http://localhost:8080
 
-GET {{BankFlow.Api_HostAddress}}/weatherforecast/
-Accept: application/json
+### API
+GET {{BankFlowApi}}/
 
-###
+### Health
+GET {{BankFlowApi}}/health
+
+### Crédito
+POST {{BankFlowApi}}/transactions
+Content-Type: application/json
+X-Correlation-Id: 11111111-1111-1111-1111-111111111111
+
+{
+  "amount": 150.50,
+  "type": 1
+}
+
+### Débito
+POST {{BankFlowApi}}/transactions
+Content-Type: application/json
+
+{
+  "amount": 75.25,
+  "type": 2
+}
+
+### Transferência
+POST {{BankFlowApi}}/transactions
+Content-Type: application/json
+
+{
+  "amount": 500.00,
+  "type": 3
+}
+
+### Inválida
+POST {{BankFlowApi}}/transactions
+Content-Type: application/json
+
+{
+  "amount": 0,
+  "type": 99
+}

@@ -6,7 +6,7 @@ namespace BankFlow.Api.Tests.Contracts;
 public class TransactionCreatedTests
 {
     [Fact]
-    public void TransactionCreated_DevePreservarOsDadosInformados()
+    public void DevePreservarOsDadosInformados()
     {
         var transactionId = Guid.NewGuid();
         var correlationId = Guid.NewGuid();
@@ -24,5 +24,22 @@ public class TransactionCreatedTests
         Assert.Equal(TransactionType.Credit, transaction.Type);
         Assert.Equal(createdAt, transaction.CreatedAt);
         Assert.Equal(correlationId, transaction.CorrelationId);
+    }
+
+    [Theory]
+    [InlineData(TransactionType.Credit)]
+    [InlineData(TransactionType.Debit)]
+    [InlineData(TransactionType.Transfer)]
+    public void DeveAceitarTodosOsTiposDeTransacao(
+        TransactionType transactionType)
+    {
+        var transaction = new TransactionCreated(
+            Guid.NewGuid(),
+            100m,
+            transactionType,
+            DateTimeOffset.UtcNow,
+            Guid.NewGuid());
+
+        Assert.Equal(transactionType, transaction.Type);
     }
 }
