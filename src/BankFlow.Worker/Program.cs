@@ -1,11 +1,14 @@
 using BankFlow.Worker.Configuration;
 using BankFlow.Worker.Consumers;
+using BankFlow.Worker.Observability;
 using BankFlow.Worker.Data;
 using BankFlow.Worker.Services;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 
 var builder = Host.CreateApplicationBuilder(args);
+
+builder.Services.AddBankFlowObservability(builder.Configuration);
 
 var connectionString =
     builder.Configuration.GetConnectionString("BankFlowWorker")
@@ -57,3 +60,4 @@ builder.Services.AddMassTransit(configuration =>
 var host = builder.Build();
 
 host.Run();
+

@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using System.Text.Json;
 using BankFlow.Api.Data;
+using BankFlow.Api.Observability;
 using BankFlow.Contracts.Events;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
@@ -12,6 +14,7 @@ public sealed class OutboxPublisherService(
     : BackgroundService
 {
     private const int BatchSize = 20;
+
     private static readonly TimeSpan PollingInterval =
         TimeSpan.FromSeconds(2);
 
@@ -61,19 +64,51 @@ public sealed class OutboxPublisherService(
 
         foreach (var message in messages)
         {
+            ActivityContext parentContext = default;
+
+            var hasParentContext =
+                !string.IsNullOrWhiteSpace(message.TraceParent)
+                && ActivityContext.TryParse(
+                    message.TraceParent,
+                    message.TraceState,
+                    out parentContext);
+
+            using var activity =
+                hasParentContext
+                    ? BankFlowTelemetry.ActivitySource.StartActivity(
+                        "bankflow.outbox.publish",
+                        ActivityKind.Producer,
+                        parentContext)
+                    : BankFlowTelemetry.ActivitySource.StartActivity(
+                        "bankflow.outbox.publish",
+                        ActivityKind.Producer);
+
+            activity?.SetTag(
+                "bankflow.outbox.id",
+                message.Id);
+
+            activity?.SetTag(
+                "bankflow.correlation_id",
+                message.CorrelationId);
+
             try
             {
-                if (message.Type != typeof(TransactionCreated).FullName)
+                if (message.Type !=
+                    typeof(TransactionCreated).FullName)
                 {
                     throw new InvalidOperationException(
-                        $"Tipo de evento n√£o suportado: {message.Type}");
+                        $"Tipo de evento n„o suportado: {message.Type}");
                 }
 
                 var transactionCreated =
                     JsonSerializer.Deserialize<TransactionCreated>(
                         message.Payload)
                     ?? throw new InvalidOperationException(
-                        "N√£o foi poss√≠vel desserializar TransactionCreated.");
+                        "N„o foi possÌvel desserializar TransactionCreated.");
+
+                activity?.SetTag(
+                    "bankflow.transaction.id",
+                    transactionCreated.TransactionId);
 
                 await publishEndpoint.Publish(
                     transactionCreated,
@@ -87,22 +122,34 @@ public sealed class OutboxPublisherService(
                 message.ProcessedAt = DateTimeOffset.UtcNow;
                 message.Error = null;
 
+                activity?.SetStatus(ActivityStatusCode.Ok);
+
+                BankFlowTelemetry.OutboxPublished.Add(1);
+
                 logger.LogInformation(
-                    "OutboxMessage {OutboxMessageId} publicada. TransactionId: {TransactionId}, CorrelationId: {CorrelationId}",
+                    "OutboxMessage {OutboxMessageId} publicada. TransactionId: {TransactionId}, CorrelationId: {CorrelationId}, TraceId: {TraceId}",
                     message.Id,
                     transactionCreated.TransactionId,
-                    message.CorrelationId);
+                    message.CorrelationId,
+                    activity?.TraceId);
             }
             catch (Exception exception)
             {
                 message.RetryCount++;
                 message.Error = exception.Message;
 
+                activity?.SetStatus(
+                    ActivityStatusCode.Error,
+                    exception.Message);
+
+                BankFlowTelemetry.OutboxFailures.Add(1);
+
                 logger.LogError(
                     exception,
-                    "Falha ao publicar OutboxMessage {OutboxMessageId}. Tentativa: {RetryCount}",
+                    "Falha ao publicar OutboxMessage {OutboxMessageId}. Tentativa: {RetryCount}, TraceId: {TraceId}",
                     message.Id,
-                    message.RetryCount);
+                    message.RetryCount,
+                    activity?.TraceId);
             }
 
             await dbContext.SaveChangesAsync(cancellationToken);

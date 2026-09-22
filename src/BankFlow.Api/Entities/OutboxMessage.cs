@@ -12,6 +12,10 @@ public sealed class OutboxMessage
 
     public Guid CorrelationId { get; set; }
 
+    public string? TraceParent { get; set; }
+
+    public string? TraceState { get; set; }
+
     public DateTimeOffset? ProcessedAt { get; set; }
 
     public string? Error { get; set; }

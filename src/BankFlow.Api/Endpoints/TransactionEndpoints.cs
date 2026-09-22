@@ -1,7 +1,9 @@
+using System.Diagnostics;
 using System.Text.Json;
 using BankFlow.Api.Data;
 using BankFlow.Api.Entities;
 using BankFlow.Api.Models;
+using BankFlow.Api.Observability;
 using BankFlow.Contracts.Events;
 using Microsoft.EntityFrameworkCore;
 
@@ -75,7 +77,9 @@ public static class TransactionEndpoints
             OccurredAt = now,
             Type = typeof(TransactionCreated).FullName!,
             Payload = JsonSerializer.Serialize(transactionCreated),
-            CorrelationId = correlationId
+            CorrelationId = correlationId,
+            TraceParent = Activity.Current?.Id,
+            TraceState = Activity.Current?.TraceStateString
         };
 
         await using var databaseTransaction =
@@ -88,6 +92,12 @@ public static class TransactionEndpoints
         await dbContext.SaveChangesAsync(cancellationToken);
 
         await databaseTransaction.CommitAsync(cancellationToken);
+
+        BankFlowTelemetry.TransactionsAccepted.Add(
+            1,
+            new KeyValuePair<string, object?>(
+                "transaction.type",
+                request.Type.ToString()));
 
         var response = new CreateTransactionResponse(
             transactionId,
@@ -146,3 +156,4 @@ public static class TransactionEndpoints
             : Guid.NewGuid();
     }
 }
+

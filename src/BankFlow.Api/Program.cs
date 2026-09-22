@@ -1,6 +1,7 @@
 using BankFlow.Api.Configuration;
 using BankFlow.Api.Data;
 using BankFlow.Api.Endpoints;
+using BankFlow.Api.Observability;
 using BankFlow.Api.Services;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
@@ -8,6 +9,8 @@ using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
+
+builder.Services.AddBankFlowObservability(builder.Configuration);
 
 var connectionString =
     builder.Configuration.GetConnectionString("BankFlow")
@@ -67,3 +70,4 @@ app.MapTransactionEndpoints();
 app.Run();
 
 public partial class Program;
+
