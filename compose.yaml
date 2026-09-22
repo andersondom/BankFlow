@@ -1,4 +1,4 @@
-services:
+﻿services:
 
   rabbitmq:
     image: rabbitmq:4-management
@@ -61,6 +61,76 @@ services:
       - "16686:16686"
       - "4317:4317"
       - "4318:4318"
+
+
+  api:
+    build:
+      context: .
+      dockerfile: src/BankFlow.Api/Dockerfile
+
+    container_name: bankflow-api
+    restart: unless-stopped
+
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+
+      ConnectionStrings__BankFlow: "Server=sqlserver,1433;Database=BankFlow;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True"
+
+      RabbitMq__Host: rabbitmq
+      RabbitMq__VirtualHost: /
+      RabbitMq__Username: ${RABBITMQ_DEFAULT_USER}
+      RabbitMq__Password: ${RABBITMQ_DEFAULT_PASS}
+
+      OpenTelemetry__OtlpEndpoint: http://jaeger:4317
+
+    ports:
+      - "5064:8080"
+
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080; printf \"GET /health HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n\" >&3; grep -q \"200 OK\" <&3'"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+
+  worker:
+    build:
+      context: .
+      dockerfile: src/BankFlow.Worker/Dockerfile
+
+    container_name: bankflow-worker
+    restart: unless-stopped
+
+    environment:
+      ConnectionStrings__BankFlowWorker: "Server=sqlserver,1433;Database=BankFlowWorker;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True"
+
+      RabbitMq__Host: rabbitmq
+      RabbitMq__VirtualHost: /
+      RabbitMq__Username: ${RABBITMQ_DEFAULT_USER}
+      RabbitMq__Password: ${RABBITMQ_DEFAULT_PASS}
+
+      OpenTelemetry__OtlpEndpoint: http://jaeger:4317
+
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
 
 
 volumes:
