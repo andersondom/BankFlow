@@ -1,4 +1,4 @@
-﻿services:
+services:
 
   rabbitmq:
     image: rabbitmq:4-management
@@ -35,7 +35,7 @@
       MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
 
     ports:
-      - "1600:1433"
+      - "21433:1433"
 
     volumes:
       - sqlserver-data:/var/opt/mssql

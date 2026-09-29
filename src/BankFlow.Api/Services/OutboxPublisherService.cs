@@ -1,4 +1,4 @@
-using System.Diagnostics;
+Ôªøusing System.Diagnostics;
 using System.Text.Json;
 using BankFlow.Api.Data;
 using BankFlow.Api.Observability;
@@ -41,7 +41,15 @@ public sealed class OutboxPublisherService(
                     "Erro durante o processamento da Outbox.");
             }
 
-            await Task.Delay(PollingInterval, stoppingToken);
+            try
+            {
+                await Task.Delay(PollingInterval, stoppingToken);
+            }
+            catch (OperationCanceledException)
+                when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
         }
     }
 
@@ -73,20 +81,16 @@ public sealed class OutboxPublisherService(
                     message.TraceState,
                     out parentContext);
 
-            using var activity =
-                hasParentContext
-                    ? BankFlowTelemetry.ActivitySource.StartActivity(
-                        "bankflow.outbox.publish",
-                        ActivityKind.Producer,
-                        parentContext)
-                    : BankFlowTelemetry.ActivitySource.StartActivity(
-                        "bankflow.outbox.publish",
-                        ActivityKind.Producer);
+            using var activity = hasParentContext
+                ? BankFlowTelemetry.ActivitySource.StartActivity(
+                    "bankflow.outbox.publish",
+                    ActivityKind.Producer,
+                    parentContext)
+                : BankFlowTelemetry.ActivitySource.StartActivity(
+                    "bankflow.outbox.publish",
+                    ActivityKind.Producer);
 
-            activity?.SetTag(
-                "bankflow.outbox.id",
-                message.Id);
-
+            activity?.SetTag("bankflow.outbox.id", message.Id);
             activity?.SetTag(
                 "bankflow.correlation_id",
                 message.CorrelationId);
@@ -97,18 +101,24 @@ public sealed class OutboxPublisherService(
                     typeof(TransactionCreated).FullName)
                 {
                     throw new InvalidOperationException(
-                        $"Tipo de evento n„o suportado: {message.Type}");
+                        $"Tipo de evento n√£o suportado: {message.Type}");
                 }
 
                 var transactionCreated =
                     JsonSerializer.Deserialize<TransactionCreated>(
                         message.Payload)
                     ?? throw new InvalidOperationException(
-                        "N„o foi possÌvel desserializar TransactionCreated.");
+                        "N√£o foi poss√≠vel desserializar TransactionCreated.");
 
                 activity?.SetTag(
                     "bankflow.transaction.id",
                     transactionCreated.TransactionId);
+
+                var traceParent =
+                    activity?.Id ?? message.TraceParent;
+
+                var traceState =
+                    activity?.TraceStateString ?? message.TraceState;
 
                 await publishEndpoint.Publish(
                     transactionCreated,
@@ -116,6 +126,20 @@ public sealed class OutboxPublisherService(
                     {
                         context.CorrelationId =
                             message.CorrelationId;
+
+                        if (!string.IsNullOrWhiteSpace(traceParent))
+                        {
+                            context.Headers.Set(
+                                "traceparent",
+                                traceParent);
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(traceState))
+                        {
+                            context.Headers.Set(
+                                "tracestate",
+                                traceState);
+                        }
                     },
                     cancellationToken);
 
@@ -123,7 +147,6 @@ public sealed class OutboxPublisherService(
                 message.Error = null;
 
                 activity?.SetStatus(ActivityStatusCode.Ok);
-
                 BankFlowTelemetry.OutboxPublished.Add(1);
 
                 logger.LogInformation(

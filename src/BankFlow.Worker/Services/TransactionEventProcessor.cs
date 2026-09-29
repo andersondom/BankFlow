@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using BankFlow.Contracts.Events;
 using BankFlow.Worker.Data;
 using BankFlow.Worker.Entities;
@@ -14,10 +14,15 @@ public sealed class TransactionEventProcessor(
     public async Task<bool> ProcessAsync(
         Guid messageId,
         TransactionCreated transaction,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ActivityContext? parentContext = null)
     {
-        using var activity =
-            BankFlowTelemetry.ActivitySource.StartActivity(
+        using var activity = parentContext.HasValue
+            ? BankFlowTelemetry.ActivitySource.StartActivity(
+                "bankflow.transaction.process",
+                ActivityKind.Consumer,
+                parentContext.Value)
+            : BankFlowTelemetry.ActivitySource.StartActivity(
                 "bankflow.transaction.process",
                 ActivityKind.Consumer);
 
@@ -37,18 +42,13 @@ public sealed class TransactionEventProcessor(
             await dbContext.InboxMessages
                 .AsNoTracking()
                 .AnyAsync(
-                    message =>
-                        message.MessageId == messageId,
+                    message => message.MessageId == messageId,
                     cancellationToken);
 
         if (alreadyProcessed)
         {
-            activity?.SetTag(
-                "bankflow.duplicate",
-                true);
-
-            activity?.SetStatus(
-                ActivityStatusCode.Ok);
+            activity?.SetTag("bankflow.duplicate", true);
+            activity?.SetStatus(ActivityStatusCode.Ok);
 
             BankFlowTelemetry.DuplicateMessages.Add(1);
 
@@ -90,37 +90,29 @@ public sealed class TransactionEventProcessor(
                 await dbContext.InboxMessages
                     .AsNoTracking()
                     .AnyAsync(
-                        message =>
-                            message.MessageId == messageId,
+                        message => message.MessageId == messageId,
                         cancellationToken);
 
             if (!duplicateConfirmed)
             {
-                activity?.SetStatus(
-                    ActivityStatusCode.Error);
-
+                activity?.SetStatus(ActivityStatusCode.Error);
                 throw;
             }
 
-            activity?.SetTag(
-                "bankflow.duplicate",
-                true);
-
-            activity?.SetStatus(
-                ActivityStatusCode.Ok);
+            activity?.SetTag("bankflow.duplicate", true);
+            activity?.SetStatus(ActivityStatusCode.Ok);
 
             BankFlowTelemetry.DuplicateMessages.Add(1);
 
             logger.LogInformation(
-                "Mensagem duplicada detectada durante a persist�ncia. MessageId: {MessageId}, TraceId: {TraceId}",
+                "Mensagem duplicada detectada durante a persistência. MessageId: {MessageId}, TraceId: {TraceId}",
                 messageId,
                 activity?.TraceId);
 
             return false;
         }
 
-        activity?.SetStatus(
-            ActivityStatusCode.Ok);
+        activity?.SetStatus(ActivityStatusCode.Ok);
 
         BankFlowTelemetry.MessagesProcessed.Add(1);
 
